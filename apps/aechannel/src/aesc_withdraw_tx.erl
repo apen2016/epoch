@@ -48,6 +48,8 @@ new(#{channel_id := ChannelId,
       to         := ToPubKey,
       amount     := Amount,
       fee        := Fee,
+      state_hash := StateHash,
+      round      := Round,
       nonce      := Nonce} = Args) ->
     Tx = #channel_withdraw_tx{
             channel_id = ChannelId,
@@ -55,6 +57,8 @@ new(#{channel_id := ChannelId,
             amount     = Amount,
             ttl        = maps:get(ttl, Args, 0),
             fee        = Fee,
+            state_hash = StateHash,
+            round      = Round,
             nonce      = Nonce},
     {ok, aetx:new(?MODULE, Tx)}.
 
@@ -83,11 +87,14 @@ amount(#channel_withdraw_tx{amount = Amt}) ->
 
 -spec check(tx(), aetx:tx_context(), aec_trees:trees(), aec_blocks:height(), non_neg_integer()) ->
         {ok, aec_trees:trees()} | {error, term()}.
-check(#channel_withdraw_tx{channel_id = ChannelId,
-                           to         = ToPubKey,
-                           amount     = Amount,
-                           fee        = Fee,
-                           nonce      = Nonce}, _Context, Trees, _Height, _ConsensusVersion) ->
+check(#channel_withdraw_tx{channel_id   = ChannelId,
+                           to           = ToPubKey,
+                           amount       = Amount,
+                           fee          = Fee,
+                           state_hash   = _StateHash,
+                           round        = _Round,
+                           nonce        = Nonce}, _Context, Trees, _Height,
+                                                _ConsensusVersion) ->
     Checks =
         [fun() -> aetx_utils:check_account(ToPubKey, Trees, Nonce, Fee) end,
          fun() -> check_channel(ChannelId, Amount, ToPubKey, Trees) end],
@@ -100,11 +107,14 @@ check(#channel_withdraw_tx{channel_id = ChannelId,
 
 -spec process(tx(), aetx:tx_context(), aec_trees:trees(), aec_blocks:height(), non_neg_integer()) ->
         {ok, aec_trees:trees()}.
-process(#channel_withdraw_tx{channel_id = ChannelId,
-                             to         = ToPubKey,
-                             amount     = Amount,
-                             fee        = Fee,
-                             nonce      = Nonce}, _Context, Trees, _Height, _ConsensusVersion) ->
+process(#channel_withdraw_tx{channel_id   = ChannelId,
+                             to           = ToPubKey,
+                             amount       = Amount,
+                             fee          = Fee,
+                             state_hash   = _StateHash,
+                             round        = _Round,
+                             nonce        = Nonce}, _Context, Trees, _Height,
+                                                   _ConsensusVersion) ->
     AccountsTree0 = aec_trees:accounts(Trees),
     ChannelsTree0 = aec_trees:channels(Trees),
 
@@ -138,6 +148,8 @@ serialize(#channel_withdraw_tx{channel_id = ChannelId,
                                amount     = Amount,
                                ttl        = TTL,
                                fee        = Fee,
+                               state_hash = StateHash,
+                               round      = Round,
                                nonce      = Nonce}) ->
     {version(),
      [ {channel_id , ChannelId}
@@ -145,6 +157,8 @@ serialize(#channel_withdraw_tx{channel_id = ChannelId,
      , {amount     , Amount}
      , {ttl        , TTL}
      , {fee        , Fee}
+     , {state_hash  , StateHash}
+     , {round       , Round}
      , {nonce      , Nonce}
      ]}.
 
@@ -155,21 +169,27 @@ deserialize(?CHANNEL_WITHDRAW_TX_VSN,
             , {amount     , Amount}
             , {ttl        , TTL}
             , {fee        , Fee}
+            , {state_hash  , StateHash}
+            , {round       , Round}
             , {nonce      , Nonce}]) ->
     #channel_withdraw_tx{channel_id = ChannelId,
                          to         = ToPubKey,
                          amount     = Amount,
                          ttl        = TTL,
                          fee        = Fee,
+                         state_hash = StateHash,
+                         round      = Round,
                          nonce      = Nonce}.
 
 -spec for_client(tx()) -> map().
-for_client(#channel_withdraw_tx{channel_id = ChannelId,
-                                to         = ToPubKey,
-                                amount     = Amount,
-                                ttl        = TTL,
-                                fee        = Fee,
-                                nonce      = Nonce}) ->
+for_client(#channel_withdraw_tx{channel_id   = ChannelId,
+                                to           = ToPubKey,
+                                amount       = Amount,
+                                ttl          = TTL,
+                                fee          = Fee,
+                                state_hash   = StateHash,
+                                round        = Round,
+                                nonce        = Nonce}) ->
     #{<<"data_schema">> => <<"ChannelWithdrawalTxJSON">>, % swagger schema name
       <<"vsn">>         => version(),
       <<"channel_id">>  => aec_base58c:encode(channel, ChannelId),
@@ -177,6 +197,8 @@ for_client(#channel_withdraw_tx{channel_id = ChannelId,
       <<"amount">>      => Amount,
       <<"ttl">>         => TTL,
       <<"fee">>         => Fee,
+      <<"state_hash">>  => aec_base58c:encode(state, StateHash),
+      <<"round">>       => Round,
       <<"nonce">>       => Nonce}.
 
 serialization_template(?CHANNEL_WITHDRAW_TX_VSN) ->
@@ -185,6 +207,8 @@ serialization_template(?CHANNEL_WITHDRAW_TX_VSN) ->
     , {amount     , int}
     , {ttl        , int}
     , {fee        , int}
+    , {state_hash , binary}
+    , {round      , int}
     , {nonce      , int}
     ].
 

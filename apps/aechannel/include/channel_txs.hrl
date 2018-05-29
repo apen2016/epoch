@@ -15,6 +15,7 @@
           lock_period        :: non_neg_integer(),
           ttl                :: aetx:tx_ttl(),
           fee                :: non_neg_integer(),
+          state_hash         :: binary(),
           nonce              :: non_neg_integer()
          }).
 
@@ -24,6 +25,8 @@
           amount      :: non_neg_integer(),
           ttl         :: aetx:tx_ttl(),
           fee         :: non_neg_integer(),
+          state_hash  :: binary(),
+          round       :: integer(),
           nonce       :: non_neg_integer()
          }).
 
@@ -33,6 +36,8 @@
           amount      :: non_neg_integer(),
           ttl         :: aetx:tx_ttl(),
           fee         :: non_neg_integer(),
+          state_hash  :: binary(),
+          round       :: integer(),
           nonce       :: non_neg_integer()
          }).
 
@@ -42,6 +47,8 @@
           responder_amount  :: non_neg_integer(),
           ttl               :: aetx:tx_ttl(),
           fee               :: non_neg_integer(),
+          state_hash        :: binary(),
+          round             :: integer(),
           nonce             :: non_neg_integer()
          }).
 
@@ -51,6 +58,8 @@
           payload    :: binary(),
           ttl        :: aetx:tx_ttl(),
           fee        :: non_neg_integer(),
+          state_hash :: binary(),
+          round      :: integer(),
           nonce      :: non_neg_integer()
          }).
 
@@ -60,17 +69,21 @@
           payload    :: binary(),
           ttl        :: aetx:tx_ttl(),
           fee        :: non_neg_integer(),
+          state_hash :: binary(),
+          round      :: integer(),
           nonce      :: non_neg_integer()
          }).
 
 -record(channel_settle_tx, {
-          channel_id :: binary(),
-          from       :: aec_keys:pubkey(),
+          channel_id        :: binary(),
+          from              :: aec_keys:pubkey(),
           initiator_amount  :: non_neg_integer(),
           responder_amount  :: non_neg_integer(),
-          ttl        :: aetx:tx_ttl(),
-          fee        :: non_neg_integer(),
-          nonce      :: non_neg_integer()
+          ttl               :: aetx:tx_ttl(),
+          fee               :: non_neg_integer(),
+          state_hash        :: binary(),
+          round             :: integer(),
+          nonce             :: non_neg_integer()
          }).
 
 %% -define(DEPOSIT_I2P, 1).
