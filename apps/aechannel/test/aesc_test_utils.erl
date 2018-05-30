@@ -218,14 +218,10 @@ close_solo_tx_spec(ChannelId, FromPubKey, Payload, Spec0, State) ->
       payload     => Payload,
       ttl         => maps:get(ttl, Spec, 0),
       fee         => maps:get(fee, Spec),
-      state_hash  => maps:get(state_hash, Spec),
-      round       => maps:get(round, Spec),
       nonce       => maps:get(nonce, Spec)}.
 
 close_solo_tx_default_spec(FromPubKey, State) ->
     #{fee         => 3,
-      state_hash  => <<123456>>,
-      round       => 42,
       nonce       => try next_nonce(FromPubKey, State) catch _:_ -> 0 end}.
 
 %%%===================================================================
@@ -292,14 +288,10 @@ slash_tx_spec(ChannelId, FromPubKey, Payload, Spec0, State) ->
       payload     => Payload,
       ttl         => maps:get(ttl, Spec, 0),
       fee         => maps:get(fee, Spec),
-      state_hash => maps:get(state_hash, Spec),
-      round      => maps:get(round, Spec),
       nonce       => maps:get(nonce, Spec)}.
 
 slash_tx_default_spec(FromPubKey, State) ->
     #{fee         => 3,
-      state_hash  => <<123456>>,
-      round       => 42,
       nonce       => try next_nonce(FromPubKey, State) catch _:_ -> 0 end}.
 
 %%%===================================================================

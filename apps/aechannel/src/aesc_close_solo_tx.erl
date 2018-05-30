@@ -47,8 +47,6 @@ new(#{channel_id := ChannelId,
       from       := FromPubKey,
       payload    := Payload,
       fee        := Fee,
-      state_hash := StateHash,
-      round      := Round,
       nonce      := Nonce} = Args) ->
     Tx = #channel_close_solo_tx{
             channel_id = ChannelId,
@@ -56,8 +54,6 @@ new(#{channel_id := ChannelId,
             payload    = Payload,
             ttl        = maps:get(ttl, Args, 0),
             fee        = Fee,
-            state_hash = StateHash,
-            round      = Round,
             nonce      = Nonce},
     {ok, aetx:new(?MODULE, Tx)}.
 
@@ -86,8 +82,6 @@ check(#channel_close_solo_tx{channel_id = ChannelId,
                              from       = FromPubKey,
                              payload    = Payload,
                              fee        = Fee,
-                             state_hash = _StateHash,
-                             round      = _Round,
                              nonce      = Nonce}, _Context, Trees, _Height, _ConsensusVersion) ->
     Checks =
         [fun() -> aetx_utils:check_account(FromPubKey, Trees, Nonce, Fee) end,
@@ -105,8 +99,6 @@ process(#channel_close_solo_tx{channel_id = ChannelId,
                                from       = FromPubKey,
                                payload    = Payload,
                                fee        = Fee,
-                               state_hash = _StateHash,
-                               round      = _Round,
                                nonce        = Nonce}, _Context, Trees, Height,
                                                   _ConsensusVersion) ->
     AccountsTree0 = aec_trees:accounts(Trees),
@@ -135,8 +127,6 @@ serialize(#channel_close_solo_tx{channel_id = ChannelId,
                                  payload    = Payload,
                                  ttl        = TTL,
                                  fee        = Fee,
-                                 state_hash = StateHash,
-                                 round      = Round,
                                  nonce      = Nonce}) ->
     {version(),
      [ {channel_id, ChannelId}
@@ -144,8 +134,6 @@ serialize(#channel_close_solo_tx{channel_id = ChannelId,
      , {payload   , Payload}
      , {ttl       , TTL}
      , {fee       , Fee}
-     , {state_hash, StateHash}
-     , {round     , Round}
      , {nonce     , Nonce}
      ]}.
 
@@ -156,16 +144,12 @@ deserialize(?CHANNEL_CLOSE_SOLO_TX_VSN,
             , {payload   , Payload}
             , {ttl       , TTL}
             , {fee       , Fee}
-            , {state_hash, StateHash}
-            , {round     , Round}
             , {nonce     , Nonce}]) ->
     #channel_close_solo_tx{channel_id = ChannelId,
                            from       = FromPubKey,
                            payload    = Payload,
                            ttl        = TTL,
                            fee        = Fee,
-                           state_hash = StateHash,
-                           round      = Round,
                            nonce      = Nonce}.
 
 -spec for_client(tx()) -> map().
@@ -174,8 +158,6 @@ for_client(#channel_close_solo_tx{channel_id = ChannelId,
                                   payload    = Payload,
                                   ttl        = TTL,
                                   fee        = Fee,
-                                  state_hash = StateHash,
-                                  round      = Round,
                                   nonce      = Nonce}) ->
     #{<<"data_schema">> => <<"ChannelCloseSoloTxJSON">>, % swagger schema name
       <<"vsn">>         => version(),
@@ -184,8 +166,6 @@ for_client(#channel_close_solo_tx{channel_id = ChannelId,
       <<"payload">>     => Payload,
       <<"ttl">>         => TTL,
       <<"fee">>         => Fee,
-      <<"state_hash">>  => aec_base58c:encode(state, StateHash),
-      <<"round">>       => Round,
       <<"nonce">>       => Nonce}.
 
 serialization_template(?CHANNEL_CLOSE_SOLO_TX_VSN) ->
@@ -194,8 +174,6 @@ serialization_template(?CHANNEL_CLOSE_SOLO_TX_VSN) ->
     , {payload   , binary}
     , {ttl       , int}
     , {fee       , int}
-    , {state_hash, binary}
-    , {round     , int}
     , {nonce     , int}
     ].
 
@@ -244,11 +222,9 @@ is_peer(FromPubKey, SignedState, Trees) ->
 
 check_channel(ChannelId, StateTx, Trees) ->
     case ChannelId =:= aesc_offchain_tx:channel_id(StateTx) of
+        false -> {error, bad_state_channel_id};
         true ->
-            aesc_utils:check_active_channel_exists(
-              ChannelId, StateTx, Trees);
-        false ->
-            {error, bad_state_channel_id}
+          aesc_utils:check_active_channel_exists(ChannelId, StateTx, Trees)
     end.
 
 -spec version() -> non_neg_integer().

@@ -92,12 +92,12 @@ check(#channel_withdraw_tx{channel_id   = ChannelId,
                            amount       = Amount,
                            fee          = Fee,
                            state_hash   = _StateHash,
-                           round        = _Round,
+                           round        = Round,
                            nonce        = Nonce}, _Context, Trees, _Height,
                                                 _ConsensusVersion) ->
     Checks =
         [fun() -> aetx_utils:check_account(ToPubKey, Trees, Nonce, Fee) end,
-         fun() -> check_channel(ChannelId, Amount, ToPubKey, Trees) end],
+         fun() -> check_channel(ChannelId, Amount, ToPubKey, Round, Trees) end],
     case aeu_validation:run(Checks) of
         ok ->
             {ok, Trees};
@@ -112,7 +112,7 @@ process(#channel_withdraw_tx{channel_id   = ChannelId,
                              amount       = Amount,
                              fee          = Fee,
                              state_hash   = _StateHash,
-                             round        = _Round,
+                             round        = Round,
                              nonce        = Nonce}, _Context, Trees, _Height,
                                                    _ConsensusVersion) ->
     AccountsTree0 = aec_trees:accounts(Trees),
@@ -125,7 +125,7 @@ process(#channel_withdraw_tx{channel_id   = ChannelId,
     AccountsTree1 = aec_accounts_trees:enter(ToAccount2, AccountsTree0),
 
     Channel0      = aesc_state_tree:get(ChannelId, ChannelsTree0),
-    Channel1      = aesc_channels:withdraw(Channel0, Amount),
+    Channel1      = aesc_channels:withdraw(Channel0, Amount, Round),
     ChannelsTree1 = aesc_state_tree:enter(Channel1, ChannelsTree0),
 
     Trees1 = aec_trees:set_accounts(Trees, AccountsTree1),
@@ -217,15 +217,17 @@ serialization_template(?CHANNEL_WITHDRAW_TX_VSN) ->
 %%%===================================================================
 
 -spec check_channel(aesc_channels:id(), aesc_channels:amount(),
-                    aec_keys:pubkey(), aec_trees:trees()) ->
+                    aec_keys:pubkey(), non_neg_integer(), aec_trees:trees()) ->
                            ok | {error, atom()}.
-check_channel(ChannelId, Amount, ToPubKey, Trees) ->
+check_channel(ChannelId, Amount, ToPubKey, Round, Trees) ->
     case aesc_state_tree:lookup(ChannelId, aec_trees:channels(Trees)) of
         {value, Channel} ->
             Checks =
                 [fun() -> aesc_utils:check_is_active(Channel) end,
                  fun() -> aesc_utils:check_is_peer(ToPubKey, aesc_channels:peers(Channel)) end,
-                 fun() -> check_amount(Channel, Amount) end],
+                 fun() -> check_amount(Channel, Amount) end,
+                 fun() -> aesc_utils:check_round_greater_than_last(Channel, Round) end
+                ],
             aeu_validation:run(Checks);
         none ->
             {error, channel_does_not_exist}

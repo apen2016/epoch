@@ -386,12 +386,10 @@ handle_request('PostChannelCloseMutual', #{'ChannelCloseMutualTx' := Req}, _Cont
 handle_request('PostChannelCloseSolo', #{'ChannelCloseSoloTx' := Req}, _Context) ->
     ParseFuns = [parse_map_to_atom_keys(),
                  read_required_params([channel_id, from,
-                                       payload,
-                                       state_hash, round, fee]),
+                                       payload, fee]),
                  read_optional_params([{ttl, ttl, '$no_value'}]),
                  base58_decode([{channel_id, channel_id, channel},
-                                {from, from, account_pubkey},
-                                {state_hash, state_hash, state}]),
+                                {from, from, account_pubkey}]),
                  get_nonce(from),
                  unsigned_tx_response(fun aesc_close_solo_tx:new/1)
                 ],
@@ -400,12 +398,10 @@ handle_request('PostChannelCloseSolo', #{'ChannelCloseSoloTx' := Req}, _Context)
 handle_request('PostChannelSlash', #{'ChannelSlashTx' := Req}, _Context) ->
     ParseFuns = [parse_map_to_atom_keys(),
                  read_required_params([channel_id, from,
-                                       payload,
-                                       state_hash, round, fee]),
+                                       payload, fee]),
                  read_optional_params([{ttl, ttl, '$no_value'}]),
                  base58_decode([{channel_id, channel_id, channel},
-                                {from, from, account_pubkey},
-                                {state_hash, state_hash, state}]),
+                                {from, from, account_pubkey}]),
                  get_nonce(from),
                  unsigned_tx_response(fun aesc_slash_tx:new/1)
                 ],
