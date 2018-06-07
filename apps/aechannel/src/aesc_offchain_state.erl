@@ -2,7 +2,7 @@
 
 -include_lib("apps/aecore/include/blocks.hrl").
 
--record(state, { trees                  :: aesc_trees:trees()
+-record(state, { trees                  :: aec_trees:trees()
                , signed_txs = []        :: [aetx_sign:signed_tx()]
                , half_signed_txs = []   :: [aetx_sign:signed_tx()]
               }).
@@ -43,13 +43,22 @@ new(Opts) ->
       responder          := ResponderPubKey,
       initiator_amount   := InitiatorAmount,
       responder_amount   := ResponderAmount} = Opts,
-    Trees = aesc_trees:new([{InitiatorPubKey, InitiatorAmount},
-                            {ResponderPubKey, ResponderAmount}]),
+    Trees0 = aec_trees:new_without_backend(),
+    Accounts =
+        lists:foldl(
+            fun({Pubkey, Amount}, AccTree) ->
+            Account = aec_accounts:new(Pubkey, Amount),
+            aec_accounts_trees:enter(Account, AccTree)
+        end,
+        aec_trees:accounts(Trees0),
+        [{InitiatorPubKey, InitiatorAmount},
+         {ResponderPubKey, ResponderAmount}]),
+    Trees = aec_trees:set_accounts(Trees0, Accounts),
     {ok, #state{trees=Trees}}.
 
 -spec hash(state()) -> binary().
 hash(#state{trees=Trees}) ->
-    aesc_trees:hash(Trees).
+    aec_trees:hash(Trees).
 
 %% update_tx checks
 check_initial_state({previous_round, N}, _) ->
@@ -99,7 +108,7 @@ check_update_tx_(F, Mod, RefTx, LastTx, #state{trees=Trees}, Opts) ->
     try  {Tx1, Trees1} = apply_updates(Updates, Mod, LastTx, Trees, Opts),
          case {{Mod:initiator_amount(RefTx), Mod:responder_amount(RefTx)},
                {Mod:initiator_amount(Tx1)  , Mod:responder_amount(Tx1)},
-               Mod:state_hash(Tx1) =:= aesc_trees:hash(Trees1)} of
+               Mod:state_hash(Tx1) =:= aec_trees:hash(Trees1)} of
              {X, X, true} ->
                  run_extra_checks(F, Mod, RefTx);
              {_, _, false} ->
@@ -178,37 +187,46 @@ apply_updates_([{?OP_TRANSFER, From, To, Amount} = U | Ds], Mod, Tx, Trees, Opts
     {A, _} = {FromBalance, A}, %% TODO: remove assert
     {B, _} = {ToBalance, B}, %% TODO: remove assert
     {A1, B1} = {FromBalance - Amount, ToBalance + Amount},
-    StateHash = aesc_trees:hash(Trees1),
+    StateHash = aec_trees:hash(Trees1),
     Tx1 = set_tx_values([{FA, A1},
                           {FB, B1},
                           {state_hash, StateHash}], Mod, Tx),
     apply_updates_(Ds, Mod, Tx1, Trees1, Opts).
 
--spec modify_trees(update(), aesc_trees:trees()) ->
-    {aesc_trees:trees(), non_neg_integer(), non_neg_integer()}.
-modify_trees({?OP_TRANSFER, From, To, Amount}, Trees) ->
-    {ok, AccFrom0} = aesc_trees:get_account(Trees, From),
-    {ok, AccTo0} = aesc_trees:get_account(Trees, To),
+-spec modify_trees(update(), aec_trees:trees()) ->
+    {aec_trees:trees(), non_neg_integer(), non_neg_integer()}.
+modify_trees({?OP_TRANSFER, From, To, Amount}, Trees0) ->
+    AccountTrees = aec_trees:accounts(Trees0),
+    AccFrom0 = aec_accounts_trees:get(From, AccountTrees),
+    AccTo0 = aec_accounts_trees:get(To, AccountTrees),
     FromBalance = aec_accounts:balance(AccFrom0),
     ToBalance = aec_accounts:balance(AccTo0),
-    {ok, AccFrom} = aec_accounts:spend(AccFrom0, Amount, 0),
+    Nonce = aec_accounts:nonce(AccFrom0),
+    {ok, AccFrom} = aec_accounts:spend(AccFrom0, Amount, Nonce + 1),
     {ok, AccTo} = aec_accounts:earn(AccTo0, Amount),
-    {lists:foldl(
-        fun(Acc, Accum) -> aesc_trees:set_account(Accum, Acc) end,
-        Trees,
-        [AccFrom, AccTo]), FromBalance, ToBalance};
+    AccountTrees1 =
+        lists:foldl(
+            fun(Acc, Accum) -> aec_accounts_trees:enter(Acc, Accum) end,
+            AccountTrees,
+            [AccFrom, AccTo]),
+    {aec_trees:set_accounts(Trees0, AccountTrees1), FromBalance, ToBalance};
 modify_trees({?OP_DEPOSIT, To, To, Amount}, Trees) ->
-    {ok, AccTo0} = aesc_trees:get_account(Trees, To),
+    AccountTrees = aec_trees:accounts(Trees),
+    AccTo0 = aec_accounts_trees:get(To, AccountTrees),
     ToBalance = aec_accounts:balance(AccTo0),
     {ok, AccTo} = aec_accounts:earn(AccTo0, Amount),
     NewBalance = ToBalance + Amount,
-    {aesc_trees:set_account(Trees, AccTo), ToBalance, NewBalance};
+    AccountTrees1 = aec_accounts_trees:enter(AccTo, AccountTrees),
+    {aec_trees:set_accounts(Trees, AccountTrees1), ToBalance, NewBalance};
 modify_trees({?OP_WITHDRAW, From, From, Amount}, Trees) ->
-    {ok, AccFrom0} = aesc_trees:get_account(Trees, From),
+    AccountTrees = aec_trees:accounts(Trees),
+    AccFrom0 = aec_accounts_trees:get(From, AccountTrees),
     FromBalance = aec_accounts:balance(AccFrom0),
-    {ok, AccFrom} = aec_accounts:spend(AccFrom0, Amount, 0),
+    Nonce = aec_accounts:nonce(AccFrom0),
+    {ok, AccFrom} = aec_accounts:spend(AccFrom0, Amount, Nonce), %no nonce bump
     NewBalance = FromBalance - Amount,
-    {aesc_trees:set_account(Trees, AccFrom), FromBalance, NewBalance}.
+    AccountTrees1 = aec_accounts_trees:enter(AccFrom, AccountTrees),
+    {aec_trees:set_accounts(Trees, AccountTrees1), NewBalance, NewBalance}.
 
 check_min_amt(Amt, Opts) ->
     Reserve = maps:get(channel_reserve, Opts, 0),

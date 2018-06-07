@@ -13,6 +13,7 @@
          commit_to_db/1,
          hash/1,
          new/0,
+         new_without_backend/0,
          channels/1,
          ns/1,
          oracles/1,
@@ -87,6 +88,16 @@ new() ->
            contracts = aect_state_tree:empty_with_backend(),
            ns        = aens_state_tree:empty_with_backend(),
            oracles   = aeo_state_tree:empty_with_backend()
+          }.
+
+-spec new_without_backend() -> trees().
+new_without_backend() ->
+    #trees{accounts  = aec_accounts_trees:empty(),
+           calls     = aect_call_state_tree:empty(),
+           channels  = aesc_state_tree:empty(),
+           contracts = aect_state_tree:empty(),
+           ns        = aens_state_tree:empty(),
+           oracles   = aeo_state_tree:empty()
           }.
 
 -spec new_poi(trees()) -> poi().

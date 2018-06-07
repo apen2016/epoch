@@ -56,7 +56,7 @@ new_state() ->
     #{}.
 
 trees(#{} = S) ->
-    maps:get(trees, S, aec_trees:new()).
+    maps:get(trees, S, aec_trees:new_without_backend()).
 
 set_trees(Trees, S) ->
     S#{trees => Trees}.
@@ -328,9 +328,18 @@ state_tx(ChannelId, Initiator, Responder, Spec0) ->
     StateHash =
         case maps:get(state_hash, Spec, <<>>) of
             <<>> -> %not set, calculate
-                Trees = aesc_trees:new([{Initiator, InitiatorAmount},
-                                        {Responder, ResponderAmount}]),
-                aesc_trees:hash(Trees);
+                Trees0 = aec_trees:new_without_backend(),
+                Accounts =
+                    lists:foldl(
+                        fun({Pubkey, Amount}, AccTree) ->
+                        Account = aec_accounts:new(Pubkey, Amount),
+                        aec_accounts_trees:enter(Account, AccTree)
+                    end,
+                    aec_trees:accounts(Trees0),
+                    [{Initiator, InitiatorAmount},
+                     {Responder, ResponderAmount}]),
+                Trees = aec_trees:set_accounts(Trees0, Accounts),
+                aec_trees:hash(Trees);
             V -> V
         end,
     {ok, StateTx} =
