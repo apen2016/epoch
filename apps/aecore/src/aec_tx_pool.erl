@@ -1,6 +1,6 @@
 %%% -*- erlang-indent-level:4; indent-tabs-mode: nil -*-
 %%%-------------------------------------------------------------------
-%%% @copyright (C) 2017, Aeternity Anstalt
+%%% @copyright (C) 2018, Aeternity Anstalt
 %%% @doc Memory pool of unconfirmed transactions.
 %%%
 %%% Unconfirmed transactions are transactions not included in any
@@ -29,6 +29,14 @@
         , top_change/2
         ]).
 
+-export([ sync_abort/2
+        , sync_finish/2
+        , sync_get/2
+        , sync_init/1
+        , sync_start/1
+        , sync_unfold/2
+        ]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
@@ -36,7 +44,11 @@
 -define(SERVER, ?MODULE).
 -define(TAB, ?MODULE).
 
--record(state, {db :: pool_db()}).
+-record(state,
+        { db :: pool_db()
+        , sync = none :: none | {active, term(), term()} | in_sync
+        , sync_out = [] :: [{sync, binary(), pid()}]
+        }).
 
 -type negated_fee() :: non_pos_integer().
 -type non_pos_integer() :: neg_integer() | 0.
@@ -99,6 +111,47 @@ top_change(OldHash, NewHash) ->
 size() ->
     ets:info(?MEMPOOL, size).
 
+-spec sync_start(PeerId :: binary()) -> ok.
+sync_start(PeerId) ->
+    gen_server:cast(?SERVER, {sync_start, PeerId}).
+
+-spec sync_init(PeerId :: binary()) -> ok | {error, term()}.
+sync_init(PeerId) ->
+    gen_server:call(?SERVER, {sync_init, PeerId}).
+
+-spec sync_abort(PeerId :: binary(), Error :: {error, term()}) -> ok.
+sync_abort(PeerId, Error) ->
+    gen_server:call(?SERVER, {sync_abort, PeerId, Error}).
+
+-spec sync_finish(PeerId :: binary(), done | {error, term()}) -> ok.
+sync_finish(PeerId, Error) ->
+    gen_server:call(?SERVER, {sync_finish, PeerId, Error}).
+
+-spec sync_get(PeerId :: binary(), TxHashes :: [binary()]) ->
+        {ok, [aetx_sign:signed_tx()]} | {error, term()}.
+sync_get(PeerId, TxHashes) ->
+    case gen_server:call(?SERVER, {sync_pid, PeerId}) of
+        {ok, Pid} ->
+            lager:debug("ZZZ get ~p at ~p", [TxHashes, Pid]),
+            aec_tx_pool_sync:sync_get(Pid, TxHashes);
+        Err = {error, _} ->
+            Err
+    end.
+
+-spec sync_unfold(PeerId :: binary(), Unfolds :: [binary()]) ->
+        {ok, [aetx_sign:signed_tx()]} | {error, term()}.
+sync_unfold(PeerId, SerUnfolds) ->
+    case gen_server:call(?SERVER, {sync_pid, PeerId}) of
+        {ok, Pid} ->
+            Unfolds = deserialize_unfolds(SerUnfolds),
+            lager:debug("ZZZ unfold ~p at ~p", [Unfolds, Pid]),
+            {ok, NewUnfolds} = aec_tx_pool_sync:sync_unfold(Pid, Unfolds),
+            lager:debug("ZZZ got result ~p at ~p", [NewUnfolds, Pid]),
+            {ok, serialize_unfolds(NewUnfolds)};
+        Err = {error, _} ->
+            Err
+    end.
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -130,10 +183,29 @@ handle_call({get_candidate, MaxNumberOfTxs, BlockHash}, _From,
             #state{db = Mempool} = State) ->
     Txs = int_get_candidate(MaxNumberOfTxs, Mempool, BlockHash),
     {reply, {ok, Txs}, State};
+handle_call({sync_init, PeerId}, _From, State) ->
+    handle_sync_init(State, PeerId);
+handle_call({sync_abort, PeerId, _Error}, _From, State) ->
+    {reply, ok, do_sync_abort(State, PeerId)};
+handle_call({sync_finish, PeerId, Result}, _From, State) ->
+    {reply, ok, do_sync_finish(State, PeerId, Result)};
+handle_call({sync_pid, PeerId}, _From, State = #state{ sync_out = SyncOuts }) ->
+    lager:debug("ZZZ sync_pid for ~p", [PeerId]),
+    Res =
+        case lists:keyfind(PeerId, 2, SyncOuts) of
+            false       -> {error, no_sync};
+            {_, _, Pid} -> {ok, Pid}
+        end,
+    {reply, Res, State};
 handle_call(Request, From, State) ->
     lager:warning("Ignoring unknown call request from ~p: ~p", [From, Request]),
     {noreply, State}.
 
+handle_cast({sync_start, PeerId}, State = #state{ sync = none }) ->
+    lager:debug("ZZZ sync_start for ~p", [PeerId]),
+    {noreply, sync_start(State, PeerId)};
+handle_cast({sync_start, _PeerId}, State) ->
+    {noreply, State};
 handle_cast(Msg, State) ->
     lager:warning("Ignoring unknown cast message: ~p", [Msg]),
     {noreply, State}.
@@ -153,7 +225,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
 -spec int_get_max_nonce(pool_db(), aec_keys:pubkey()) -> {ok, non_neg_integer()} | undefined.
 int_get_max_nonce(Mempool, Sender) ->
     case lists:flatten(ets:match(Mempool, ?KEY_NONCE_PATTERN(Sender))) of
@@ -356,3 +427,168 @@ check_minimum_fee(Tx,_Hash) ->
         true  -> ok;
         false -> {error, too_low_fee}
     end.
+
+sync_start(State, PeerId) ->
+    {Pid, Ref} = spawn_monitor(fun() -> aec_tx_pool_sync(PeerId) end),
+    State#state{ sync = {active, PeerId, {Pid, Ref}} }.
+
+aec_tx_pool_sync(PeerId) ->
+    case build_tx_mpt() of
+        {ok, TxTree} ->
+            lager:debug("ZZ tree built ~p", [PeerId]),
+            aec_tx_pool_sync_loop(PeerId, TxTree, init);
+        {error, Reason} ->
+            lager:debug("ZZ tree failed", []),
+            aec_tx_pool:sync_finish(PeerId, {error, Reason})
+    end.
+
+aec_tx_pool_sync_loop(PeerId, TxTree, init) ->
+    case aec_peer_connection:tx_pool_sync_init(PeerId) of
+        ok ->
+            lager:debug("ZZ init ok ~p", [PeerId]),
+            InitUnfolds = [{node, <<>>, aeu_mp_trees:root_hash(TxTree)}],
+            aec_tx_pool_sync_loop(PeerId, TxTree, InitUnfolds, []);
+        Err = {error, _} ->
+            lager:debug("ZZ init error ~p", [Err]),
+            aec_tx_pool:sync_abort(PeerId, Err)
+    end.
+
+aec_tx_pool_sync_loop(PeerId, _TxTree, [], []) ->
+    aec_peer_connection:tx_pool_sync_abort(PeerId),
+    aec_tx_pool:sync_finish(PeerId, done);
+aec_tx_pool_sync_loop(PeerId, TxTree, [], Gets) ->
+    lager:debug("ZZ getting ~p", [Gets]),
+    case aec_peer_connection:tx_pool_sync_get(PeerId, Gets) of
+        {ok, Txs} -> %% Should we verify the content?
+            [ aec_tx_pool:push(Tx) || Tx <- Txs ],
+            aec_tx_pool_sync_loop(PeerId, TxTree, [], []);
+        Err = {error, _} ->
+            aec_tx_pool:sync_abort(PeerId, Err)
+    end;
+aec_tx_pool_sync_loop(PeerId, TxTree, Unfolds, Gets) ->
+    SerUnfolds = serialize_unfolds(Unfolds),
+    lager:debug("ZZ unfolding ~p", [Unfolds]),
+    case aec_peer_connection:tx_pool_sync_unfold(PeerId, SerUnfolds) of
+        {ok, NewSerUnfolds} ->
+            NewUnfolds = deserialize_unfolds(NewSerUnfolds),
+            {NewUnfolds1, NewGets1} = analyze_unfolds(NewUnfolds, TxTree),
+            lager:debug("ZZ new unfold ~p", [{NewUnfolds1, NewGets1}]),
+            aec_tx_pool_sync_loop(PeerId, TxTree, NewUnfolds1, Gets ++ NewGets1);
+        Err = {error, _} ->
+            aec_tx_pool:sync_abort(PeerId, Err)
+    end.
+
+build_tx_mpt() ->
+    try
+        F = fun(TxHash, Tree) ->
+                aeu_mp_trees:put(TxHash, [], Tree)
+            end,
+        Tree = aec_db:fold_mempool(F, aeu_mp_trees:new()),
+        {ok, Tree}
+    catch _:R ->
+        {error, R}
+    end.
+
+serialize_unfolds(Us) ->
+    [ serialize_unfold(U) || U <- Us ].
+
+deserialize_unfolds(SUs) ->
+    [ deserialize_unfold(SU) || SU <- SUs ].
+
+serialize_unfold({node, Path, Node}) ->
+    aeu_rlp:encode(
+        aec_serialization:encode_fields(
+            [{type, int}, {path, binary}, {node, binary}],
+            [{type, 0}, {path, Path}, {node, Node}]));
+serialize_unfold({key, Key}) ->
+    aeu_rlp:encode(
+        aec_serialization:encode_fields(
+            [{type, int}, {key, binary}],
+            [{type, 1}, {key, Key}]));
+serialize_unfold({subtree, Path}) ->
+    aeu_rlp:encode(
+        aec_serialization:encode_fields(
+            [{type, int}, {subtree, binary}],
+            [{type, 2}, {subtree, Path}])).
+
+deserialize_unfold(Blob) ->
+    try
+        [TypeBin | Fields] = aeu_rlp:decode(Blob),
+        [{type, Type}] = aec_serialization:decode_fields([{type, int}], [TypeBin]),
+        deserialize_unfold(Type, Fields)
+    catch _:Reason ->
+        {error, Reason}
+    end.
+
+deserialize_unfold(0, Flds) ->
+    [{path, Path}, {node, Node}] =
+        aec_serialization:decode_fields([{path, binary}, {node, binary}], Flds),
+    {node, Path, Node};
+deserialize_unfold(1, Flds) ->
+    [{key, Key}] = aec_serialization:decode_fields([{key, binary}], Flds),
+    {key, Key};
+deserialize_unfold(2, Flds) ->
+    [{subtree, Path}] = aec_serialization:decode_fields([{subtree, binary}], Flds),
+    {subtree, Path}.
+
+
+analyze_unfolds(Us, Tree) ->
+    analyze_unfolds(Us, Tree, [], []).
+
+analyze_unfolds([], _Tree, NewUs, NewGets) ->
+    {lists:reverse(NewUs), lists:reverse(NewGets)};
+analyze_unfolds([{key, Key} | Us], Tree, NewUs, NewGets) ->
+    analyze_unfolds(Us, Tree, NewUs, [Key | NewGets]);
+analyze_unfolds([N = {node, Path, Node} | Us], Tree, NewUs, NewGets) ->
+    case aeu_mp_trees:has_node(Path, Node, Tree) of
+        no ->
+            analyze_unfolds(Us, Tree, [{subtree, Path} | NewUs], NewGets);
+        partially ->
+            analyze_unfolds(Us, Tree, [N | NewUs], NewGets);
+        yes ->
+            analyze_unfolds(Us, Tree, NewUs, NewGets)
+    end.
+
+-define(MAX_SYNCS, 3).
+
+handle_sync_init(State = #state{ sync_out = Ss }, PeerId) ->
+    lager:debug("ZZZ sync_init ~p", [PeerId]),
+    case length(Ss) >= ?MAX_SYNCS of
+        true ->
+            {reply, {error, too_many_simultaneous_sync_activities}, State};
+        false ->
+            case lists:keyfind(PeerId, 2, Ss) of
+                false ->
+                    do_sync_init(State, PeerId);
+                _ ->
+                    {reply, {error, already_syncing_with_peer}, State}
+            end
+    end.
+
+do_sync_init(State = #state{ sync_out = Ss }, PeerId) ->
+    {ok, Pid} = aec_tx_pool_sync:start_link(),
+    {reply, ok, State#state{ sync_out = [{sync, PeerId, Pid} | Ss] }}.
+
+do_sync_finish(State = #state{ sync = {active, PeerId, {_, Ref}} }, PeerId, done) ->
+    erlang:demonitor(Ref, [flush]),
+    State#state{ sync = in_sync };
+do_sync_finish(State = #state{ sync = {active, PeerId, {_, Ref}} }, PeerId, {error, _Reason}) ->
+    erlang:demonitor(Ref, [flush]),
+    State#state{ sync = none };
+do_sync_finish(State, _PeerId, _Result) ->
+    State.
+
+do_sync_abort(State = #state{ sync = {active, PeerId, {_, Ref}}  }, PeerId) ->
+    lager:debug("ZZ sync_abort ~p", [PeerId]),
+    erlang:demonitor(Ref, [flush]),
+    State#state{ sync = none };
+do_sync_abort(State = #state{ sync_out = Ss }, PeerId) ->
+    case lists:keyfind(PeerId, 2, Ss) of
+        false ->
+            State;
+        {sync, PeerId, Pid} ->
+            lager:debug("ZZ sync_abort ~p", [{PeerId, Pid}]),
+            aec_tx_pool_sync:stop(Pid),
+            State#state{ sync_out = lists:keydelete(PeerId, 2, Ss) }
+    end.
+
