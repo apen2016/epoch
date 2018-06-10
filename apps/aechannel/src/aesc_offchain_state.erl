@@ -304,8 +304,11 @@ mutually_signed(SignedTx) ->
         [_, _] ->
             %% mutually signed
             true;
+        [] ->
+            %% on chain
+            true;
         _ ->
-           false
+            false
     end.
 
 set_tx_values([{K, V}|T], Mod, Tx) ->

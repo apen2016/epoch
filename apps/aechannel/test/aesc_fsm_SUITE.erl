@@ -286,10 +286,12 @@ create_channel_(Cfg, Debug) ->
     %% dynamic key negotiation
     Proto = <<"Noise_NN_25519_ChaChaPoly_BLAKE2b">>,
 
+    IAmt = 5,
+    RAmt = 5,
     Spec = #{initiator        => maps:get(pub, I),
              responder        => maps:get(pub, R),
-             initiator_amount => 5,
-             responder_amount => 5,
+             initiator_amount => IAmt,
+             responder_amount => RAmt,
              push_amount      => 2,
              lock_period      => 10,
              channel_reserve  => 3,
@@ -304,8 +306,8 @@ create_channel_(Cfg, Debug) ->
 
     log(Debug, "FSMs, I = ~p, R = ~p", [FsmI, FsmR]),
 
-    I1 = I#{fsm => FsmI},
-    R1 = R#{fsm => FsmR},
+    I1 = I#{fsm => FsmI, initiator_amount => IAmt, responder_amount => RAmt},
+    R1 = R#{fsm => FsmR, initiator_amount => IAmt, responder_amount => RAmt},
 
     {I2, R2} = try await_create_tx_i(I1, R1, Debug)
                catch
@@ -314,6 +316,11 @@ create_channel_(Cfg, Debug) ->
                               [Err, element(2, process_info(self(), messages))]),
                        error(Err, erlang:get_stacktrace())
                end,
+    log(Debug, "mining blocks on dev1 for minimum depth", []),
+    mine_blocks(dev1, 4, Debug),
+    check_info(),
+    receive_info(I2, open, Debug),
+    receive_info(R2, open, Debug),
     #{i => I2, r => R2, spec => Spec}.
 
 await_create_tx_i(I, R, Debug) ->
@@ -326,12 +333,7 @@ await_funding_created_p(I, R, Debug) ->
 
 await_funding_signed_i(I, R, Debug) ->
     receive_info(I, funding_signed, Debug),
-    await_funding_locked(I, R, Debug).
-
-await_funding_locked(I, R, Debug) ->
-    log(Debug, "mining blocks on dev1 for minimum depth", []),
-    mine_blocks(dev1, 4, Debug),
-    await_initial_state(I, R, Debug).
+    {I, R}.
 
 await_initial_state(I, R) -> await_initial_state(I, R, true).
 

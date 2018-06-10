@@ -2882,11 +2882,6 @@ sc_ws_open(Config) ->
 
     channel_send_locking_infos(IConnPid, RConnPid),
 
-    UpdateTx = channel_sign_tx(IConnPid, IPrivkey, <<"update">>),
-
-    {ok, #{<<"event">> := <<"update">>}} = ?WS:wait_for_channel_event(RConnPid, info),
-    UpdateTx = channel_sign_tx(RConnPid, RPrivkey, <<"update_ack">>),
-
     channel_send_chan_open_infos(RConnPid, IConnPid),
 
     ChannelClients = #{initiator => IConnPid,

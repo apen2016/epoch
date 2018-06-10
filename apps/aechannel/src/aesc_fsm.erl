@@ -783,15 +783,10 @@ signed({call, From}, Req, D) ->
 
 
 funding_locked_complete(D) ->
-    case D#data.role of
-        initiator ->
-            {ok, OCTx} = initial_state(D),
-            ok   = request_signing(?UPDATE, OCTx, D),
-            D1   = D#data{latest = {sign, ?UPDATE, OCTx}},
-            next_state(awaiting_signature, D1);
-        responder ->
-            next_state(awaiting_initial_state, D)
-    end.
+    {ok, OCTx} = initial_state(D),
+    SignedOCTx = aetx_sign:sign(OCTx, []),
+    D1   = D#data{state = aesc_offchain_state:add_signed_tx(SignedOCTx, D#data.state)},
+    next_state(open, D1).
 
 
 
