@@ -620,19 +620,13 @@ wdraw_signed({call, From}, Req, D) ->
 
 withdraw_locked_complete(SignedTx, #data{state = State, opts = Opts} = D) ->
     {Mod, TxI} = aetx:specialize_callback(aetx_sign:tx(SignedTx)),
-    MyAcct = my_account(D),
-    case Mod:origin(TxI) of
-        MyAcct ->
-            Amt = Mod:amount(TxI),
-            Updates = [aesc_offchain_state:op_withdraw(MyAcct, Amt)],
-            NewTx = aesc_offchain_state:make_update_tx(Updates, State, Opts),
-            ok = request_signing(?UPDATE, NewTx, D),
-            D1 = D#data{latest = {sign, ?UPDATE, NewTx}},
-            next_state(awaiting_signature, D1);
-        _ ->
-            D1 = D#data{latest = {withdraw, SignedTx}},
-            next_state(awaiting_withdraw_update, D1)
-    end.
+    Amt = Mod:amount(TxI),
+    Account = Mod:origin(TxI),
+    Updates = [aesc_offchain_state:op_withdraw(Account, Amt)],
+    NewTx = aesc_offchain_state:make_update_tx(Updates, State, Opts),
+    SignedOCTx = aetx_sign:sign(NewTx, []),
+    D1   = D#data{state = aesc_offchain_state:add_signed_tx(SignedOCTx, D#data.state)},
+    next_state(open, D1).
 
 
 awaiting_locked(enter, _OldSt, _D) -> keep_state_and_data;
