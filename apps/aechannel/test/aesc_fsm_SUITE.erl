@@ -175,10 +175,10 @@ deposit(Cfg) ->
     {I1, _} = await_signing_request(deposit_tx, I),
     {R1, _} = await_signing_request(deposit_created, R),
     mine_blocks(dev1, 4),
-    {I2, _R2} = await_initial_state(I1, R1),
-    ct:log("I2 = ~p", [I2]),
-    #{initiator_amount := IAmt2, responder_amount := RAmt2} = I2,
-    {IAmt2, RAmt2} = {IAmt0 + Deposit, RAmt0},
+    ct:log("I2 = ~p", [I1]),
+    #{initiator_amount := IAmt2, responder_amount := RAmt2} = I1,
+    Expected = {IAmt2, RAmt2},
+    {Expected, Expected} = {{IAmt0 + Deposit, RAmt0}, Expected},
     check_info(100).
 
 withdraw(Cfg) ->
@@ -467,6 +467,22 @@ check_amounts(R, SignedTx) ->
             RAmt = aesc_offchain_tx:responder_amount(TxI),
             R#{ initiator_amount => IAmt
                 , responder_amount => RAmt };
+        {aesc_deposit_tx, TxD} ->
+            Deposit = aesc_deposit_tx:amount(TxD),
+            From = aesc_deposit_tx:origin(TxD),
+            #{initiator_amount  := IAmt
+            , responder_amount  := RAmt
+            , pub               := MyKey
+            , role              := Role} = R,
+            {IAmt1, RAmt1} =
+                case {From, Role} of
+                    {MyKey, initiator} -> {IAmt + Deposit, RAmt};
+                    {MyKey, responder} -> {IAmt, RAmt + Deposit};
+                    {_OtherKey, initiator} -> {IAmt, RAmt + Deposit};
+                    {_OtherKey, responder} -> {IAmt + Deposit, RAmt}
+                end,
+            R#{ initiator_amount => IAmt1
+                , responder_amount => RAmt1 };
         _ ->
             R
     end.
