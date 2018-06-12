@@ -151,7 +151,7 @@ construct_proof(Key, ProofDB, #mpt{db = DB, hash = Hash}) ->
                       | {'bad_value', term()}
                       | {'bad_hash', hash()}.
 
--spec verify_proof(key(), value(), hash(), db()) -> 'ok'
+-spec verify_proof(key(), value() | perform_lookup, hash(), db()) -> 'ok'
                                                   | {'error', verify_error()}.
 verify_proof(Key, Val, Hash, ProofDB) ->
     try decode_node_and_check_hash(Hash, ProofDB) of

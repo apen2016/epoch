@@ -37,6 +37,7 @@
 
 %% Proof of inclusion
 -export([add_poi/4,
+         lookup_poi/3,
          deserialize_poi/1,
          new_poi/1,
          poi_hash/1,
@@ -110,6 +111,11 @@ add_poi(accounts, PubKey, Trees, #poi{} = Poi) ->
     internal_add_accounts_poi(PubKey, accounts(Trees), Poi);
 add_poi(Type,_PubKey,_Trees, #poi{} =_Poi) ->
     error({nyi, Type}).
+
+-spec lookup_poi(tree_type(), aec_keys:pubkey(), poi()) -> {'ok', aec_accounts:account()}
+                                                      | {'error', term()}.
+lookup_poi(accounts, PubKey, #poi{} = Poi) ->
+    internal_lookup_accounts_poi(PubKey, Poi).
 
 -spec poi_hash(poi()) -> state_hash().
 poi_hash(#poi{} = Poi) ->
@@ -330,6 +336,15 @@ internal_add_accounts_poi(Pubkey, Trees, #poi{accounts = {poi, APoi}} = Poi) ->
     case aec_accounts_trees:add_poi(Pubkey, Trees, APoi) of
         {ok, SerializedAccount, NewAPoi} ->
             {ok, SerializedAccount, Poi#poi{accounts = {poi, NewAPoi}}};
+        {error, _} = E -> E
+    end.
+
+internal_lookup_accounts_poi(_Pubkey, #poi{accounts = empty}) ->
+    {error, not_present};
+internal_lookup_accounts_poi(Pubkey, #poi{accounts = {poi, APoi}} = Poi) ->
+    case aec_accounts_trees:lookup_poi(Pubkey, APoi) of
+        {ok, Account} ->
+            {ok, Account};
         {error, _} = E -> E
     end.
 
