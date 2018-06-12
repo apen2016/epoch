@@ -105,7 +105,12 @@ create_contract_negative(_Cfg) ->
     {error, account_nonce_too_high} = aetx:check(RTx3, Trees, CurrHeight, ?PROTOCOL_VERSION),
 
     %% Test contract init failure
-    RTx4 = aect_test_utils:create_tx(PubKey, S1),
+    Code = <<"Bad Code">>,
+    CallData     = aeso_abi:create_calldata(Code, "init", "42"),
+    Overrides    = #{ call_data => CallData
+                    , gas => 10000
+                    },
+    RTx4 = aect_test_utils:create_tx(PubKey, Overrides, S1),
     {ok, S4} = sign_and_apply_transaction(RTx4, PrivKey, S1, ?MINER_PUBKEY),
     {none, _} = lookup_contract_by_id(aect_contracts:compute_contract_pubkey(PubKey, aetx:nonce(RTx4)), S4),
 
@@ -116,7 +121,7 @@ create_contract(_Cfg) ->
     PrivKey      = aect_test_utils:priv_key(PubKey, S1),
 
     IdContract   = aect_test_utils:compile_contract("contracts/identity.aes"),
-    CallData     = aeso_abi:create_calldata(IdContract, "main", "42"),
+    CallData     = aeso_abi:create_calldata(IdContract, "init", "42"),
     Overrides    = #{ code => IdContract
         , call_data => CallData
         , gas => 10000
@@ -209,9 +214,9 @@ call_contract(_Cfg) ->
     CallerBalance = aec_accounts:balance(aect_test_utils:get_account(Caller, S2)),
 
     IdContract   = aect_test_utils:compile_contract("contracts/identity.aes"),
-    CallData     = aeso_abi:create_calldata(IdContract, "main", "42"),
+    CallDataInit = aeso_abi:create_calldata(IdContract, "init", "42"),
     Overrides    = #{ code => IdContract
-		    , call_data => CallData
+		    , call_data => CallDataInit
 		    , gas => 10000
 		    },
     CreateTx     = aect_test_utils:create_tx(Owner, Overrides, S2),
