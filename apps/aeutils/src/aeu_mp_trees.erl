@@ -449,6 +449,8 @@ proof_db_insert(Hash, DB, ProofDB) when byte_size(Hash) =:= 32 ->
 
 int_verify_proof(_Path, <<>>, <<>>, _ProofDB) ->
     ok;
+int_verify_proof(_Path, <<>>, _, _ProofDB) ->
+    bad_proof;
 int_verify_proof(<<>>, {branch, Branch}, Val, _ProofDB) ->
     case branch_value(Branch) of
         Val  -> ok;

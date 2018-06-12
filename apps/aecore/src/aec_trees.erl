@@ -341,7 +341,7 @@ internal_add_accounts_poi(Pubkey, Trees, #poi{accounts = {poi, APoi}} = Poi) ->
 
 internal_lookup_accounts_poi(_Pubkey, #poi{accounts = empty}) ->
     {error, not_present};
-internal_lookup_accounts_poi(Pubkey, #poi{accounts = {poi, APoi}} = Poi) ->
+internal_lookup_accounts_poi(Pubkey, #poi{accounts = {poi, APoi}} = _Poi) ->
     case aec_accounts_trees:lookup_poi(Pubkey, APoi) of
         {ok, Account} ->
             {ok, Account};

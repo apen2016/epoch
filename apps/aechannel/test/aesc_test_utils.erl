@@ -30,12 +30,13 @@
          close_mutual_tx_spec/3,
 
          payload/5,
+         proof_of_inclusion/1,
 
-         close_solo_tx_spec/4,
          close_solo_tx_spec/5,
+         close_solo_tx_spec/6,
 
-         slash_tx_spec/4,
          slash_tx_spec/5,
+         slash_tx_spec/6,
 
          deposit_tx_spec/3,
          deposit_tx_spec/4,
@@ -123,12 +124,28 @@ close_solo(Ch) ->
     close_solo(Ch, #{}).
 
 close_solo(Ch, Params) ->
+
+    {InitiatorEndBalance, ResponderEndBalance} =
+        case Params of
+            #{initiator_amount := IAmt, responder_amount := RAmt} ->
+                {IAmt, RAmt};
+            _ ->
+                ChannelAmount = aesc_channels:total_amount(Ch),
+                IAmt = rand:uniform(ChannelAmount),
+                RAmt = ChannelAmount - IAmt,
+                {IAmt, RAmt}
+        end,
+
     DummyStateTx = state_tx(aesc_channels:id(Ch),
                             aesc_channels:initiator(Ch),
                             aesc_channels:responder(Ch),
-                            Params),
-    {_Type, Tx} = aetx:specialize_type(DummyStateTx),
-    aesc_channels:close_solo(Ch, Tx, 11).
+                            maps:merge(Params, #{initiator_amount => InitiatorEndBalance,
+                                                 responder_amount => ResponderEndBalance})),
+    {ok, PayloadTx} = aesc_payload:correct_type(DummyStateTx),
+
+    PoI = proof_of_inclusion([{aesc_channels:initiator(Ch), InitiatorEndBalance},
+                              {aesc_channels:responder(Ch), ResponderEndBalance}]),
+    aesc_channels:close_solo(Ch, PayloadTx, PoI, 11).
 
 get_channel(ChannelId, State) ->
     aesc_state_tree:get(ChannelId, aec_trees:channels(trees(State))).
@@ -208,14 +225,15 @@ close_mutual_tx_default_spec(Initiator, State) ->
 %%% Close solo tx
 %%%===================================================================
 
-close_solo_tx_spec(ChannelId, FromPubKey, Payload, State) ->
-    close_solo_tx_spec(ChannelId, FromPubKey, Payload, #{}, State).
+close_solo_tx_spec(ChannelId, FromPubKey, Payload, PoI, State) ->
+    close_solo_tx_spec(ChannelId, FromPubKey, Payload, PoI, #{}, State).
 
-close_solo_tx_spec(ChannelId, FromPubKey, Payload, Spec0, State) ->
+close_solo_tx_spec(ChannelId, FromPubKey, Payload, PoI, Spec0, State) ->
     Spec = maps:merge(close_solo_tx_default_spec(FromPubKey, State), Spec0),
     #{channel_id  => ChannelId,
       from        => FromPubKey,
       payload     => Payload,
+      poi         => PoI,
       ttl         => maps:get(ttl, Spec, 0),
       fee         => maps:get(fee, Spec),
       nonce       => maps:get(nonce, Spec)}.
@@ -278,14 +296,15 @@ withdraw_tx_spec(ToPubKey, State) ->
 %%% Slash tx
 %%%===================================================================
 
-slash_tx_spec(ChannelId, FromPubKey, Payload, State) ->
-    slash_tx_spec(ChannelId, FromPubKey, Payload, #{}, State).
+slash_tx_spec(ChannelId, FromPubKey, Payload, PoI, State) ->
+    slash_tx_spec(ChannelId, FromPubKey, Payload, PoI, #{}, State).
 
-slash_tx_spec(ChannelId, FromPubKey, Payload, Spec0, State) ->
+slash_tx_spec(ChannelId, FromPubKey, Payload, PoI, Spec0, State) ->
     Spec = maps:merge(slash_tx_default_spec(FromPubKey, State), Spec0),
     #{channel_id  => ChannelId,
       from        => FromPubKey,
       payload     => Payload,
+      poi         => PoI,
       ttl         => maps:get(ttl, Spec, 0),
       fee         => maps:get(fee, Spec),
       nonce       => maps:get(nonce, Spec)}.
@@ -366,3 +385,17 @@ state_tx_spec() ->
 payload(ChannelId, Initiator, Responder, SignersPrivKeys, Spec) ->
     StateTx = state_tx(ChannelId, Initiator, Responder, Spec),
     aetx_sign:serialize_to_binary(aetx_sign:sign(StateTx, SignersPrivKeys)). %% No signatures
+
+proof_of_inclusion(Participants) ->
+    Accounts = [aec_accounts:new(Pubkey, Balance) ||
+                {Pubkey, Balance} <- Participants],
+    Trees = aec_test_utils:create_state_tree_with_accounts(Accounts, no_backend),
+    lists:foldl(
+        fun({Pubkey, _}, AccumPoI) ->
+            {ok, _, AccumPoI1} = aec_trees:add_poi(accounts, Pubkey,
+                                                    Trees, AccumPoI),
+            AccumPoI1
+        end,
+        aec_trees:new_poi(Trees),
+        Participants).
+

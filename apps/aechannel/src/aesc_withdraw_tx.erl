@@ -9,6 +9,7 @@
 -include("channel_txs.hrl").
 
 -behavior(aetx).
+-behaviour(aesc_payload).
 
 %% Behavior API
 -export([new/1,
@@ -27,6 +28,12 @@
          for_client/1
         ]).
 
+% payload callbacks
+-export([channel_id/1,
+         state_hash/1,
+         updates/1,
+         round/1]).
+
 %%%===================================================================
 %%% Types
 %%%===================================================================
@@ -38,6 +45,8 @@
 -opaque tx() :: #channel_withdraw_tx{}.
 
 -export_type([tx/0]).
+
+-compile({no_auto_import, [round/1]}).
 
 %%%===================================================================
 %%% Behaviour API
@@ -211,6 +220,16 @@ serialization_template(?CHANNEL_WITHDRAW_TX_VSN) ->
     , {round      , int}
     , {nonce      , int}
     ].
+
+channel_id(#channel_withdraw_tx{channel_id = ChannelId}) -> ChannelId.
+
+state_hash(#channel_withdraw_tx{state_hash = StateHash}) -> StateHash.
+
+updates(#channel_withdraw_tx{to = To, amount = Amount}) ->
+    [aesc_offchain_state:op_withdraw(To, Amount)].
+
+round(#channel_withdraw_tx{round = Round}) ->
+    Round.
 
 %%%===================================================================
 %%% Internal functions

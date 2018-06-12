@@ -30,6 +30,7 @@
         , get_fallback_state/1        %%  (State) -> {Round, State'}
         , fallback_to_stable_state/1  %%  (State) -> State'
         , hash/1                      %%  (State) -> hash()
+        , update_for_client/1
         ]).
 -export([ op_transfer/3
         , op_deposit/2
@@ -315,3 +316,19 @@ set_tx_values([{K, V}|T], Mod, Tx) ->
     set_tx_values(T, Mod, Mod:set_value(Tx, K, V));
 set_tx_values([], _, Tx) ->
     Tx.
+
+-spec update_for_client(update()) -> map().
+update_for_client({?OP_TRANSFER, From, To, Amount}) ->
+    #{<<"op">> => <<"transfer">>,
+      <<"from">> => From,
+      <<"to">>   => To,
+      <<"am">>   => Amount};
+update_for_client({?OP_WITHDRAW, To, To, Amount}) ->
+    #{<<"op">> => <<"withdraw">>,
+      <<"to">>   => To,
+      <<"am">>   => Amount};
+update_for_client({?OP_DEPOSIT, From, From, Amount}) ->
+    #{<<"op">> => <<"deposit">>,
+      <<"from">>   => From,
+      <<"am">>   => Amount}.
+

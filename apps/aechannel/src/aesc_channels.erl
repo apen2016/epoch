@@ -15,8 +15,8 @@
          new/1,
          peers/1,
          serialize/1,
-         slash/3,
-         close_solo/3,
+         slash/4,
+         close_solo/4,
          withdraw/3]).
 
 %% Getters
@@ -71,12 +71,16 @@
 %%% API
 %%%===================================================================
 
--spec close_solo(channel(), aesc_offchain_tx:tx(), aec_blocks:height()) -> channel().
-close_solo(#channel{lock_period = LockPeriod} = Ch, State, Height) ->
+-spec close_solo(channel(), aesc_payload:tx(), aec_trees:poi(), aec_blocks:height()) -> channel().
+close_solo(#channel{lock_period = LockPeriod,
+                    initiator = Initiator,
+                    responder = Responder} = Ch, PayloadTx, PoI, Height) ->
     ClosesAt = Height + LockPeriod,
-    Ch#channel{initiator_amount = aesc_offchain_tx:initiator_amount(State),
-               total_amount     = aesc_offchain_tx:initiator_amount(State) + aesc_offchain_tx:responder_amount(State),
-               round            = aesc_offchain_tx:round(State),
+    InitiatorAmt = amount_from_poi(PoI, Initiator),
+    ResponderAmt = amount_from_poi(PoI, Responder),
+    Ch#channel{initiator_amount = InitiatorAmt,
+               total_amount     = InitiatorAmt + ResponderAmt,
+               round            = aesc_payload:round(PayloadTx),
                closes_at        = ClosesAt}.
 
 -spec deposit(channel(), amount(), seq_number()) -> channel().
@@ -177,12 +181,17 @@ serialization_template(?CHANNEL_VSN) ->
     , {lock_period      , int}
     , {closes_at        , int}
     ].
--spec slash(channel(), aesc_offchain_tx:tx(), aec_blocks:height()) -> channel().
-slash(#channel{lock_period = LockPeriod} = Ch, State, Height) ->
+
+-spec slash(channel(), aesc_payload:tx(), aec_trees:poi(), aec_blocks:height()) -> channel().
+slash(#channel{lock_period = LockPeriod,
+               initiator = Initiator,
+               responder = Responder} = Ch, PayloadTx, PoI, Height) ->
+    InitiatorAmt = amount_from_poi(PoI, Initiator),
+    ResponderAmt = amount_from_poi(PoI, Responder),
     ClosesAt = Height + LockPeriod,
-    Ch#channel{initiator_amount = aesc_offchain_tx:initiator_amount(State),
-               total_amount     = aesc_offchain_tx:initiator_amount(State) + aesc_offchain_tx:responder_amount(State),
-               round            = aesc_offchain_tx:round(State),
+    Ch#channel{initiator_amount = InitiatorAmt,
+               total_amount     = InitiatorAmt +  ResponderAmt,
+               round            = aesc_payload:round(PayloadTx),
                closes_at        = ClosesAt}.
 
 -spec withdraw(channel(), amount(), seq_number()) -> channel().
@@ -234,3 +243,7 @@ lock_period(#channel{lock_period = LockPeriod}) ->
 -spec round(channel()) -> non_neg_integer().
 round(#channel{round = Round}) ->
     Round.
+
+amount_from_poi(PoI, Pubkey) ->
+    {ok, Account} = aec_trees:lookup_poi(accounts, Pubkey, PoI),
+    aec_accounts:balance(Account).

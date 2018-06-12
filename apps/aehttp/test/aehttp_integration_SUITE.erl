@@ -1193,13 +1193,16 @@ state_channels_close_mutual(ChannelId, InitiatorPubkey) ->
     ok.
 
 state_channels_close_solo(ChannelId, MinerPubkey) ->
+    PoI = aec_trees:new_poi(aec_trees:new_without_backend()),
     Encoded = #{channel_id => aec_base58c:encode(channel, ChannelId),
                 from => aec_base58c:encode(account_pubkey, MinerPubkey),
                 payload => <<"hejsan svejsan">>, %%TODO proper payload
+                poi => aec_base58c:encode(poi, aec_trees:serialize_poi(PoI)),
                 fee => 1},
     Decoded = maps:merge(Encoded,
                         #{from => MinerPubkey,
-                          channel_id => ChannelId}),
+                          channel_id => ChannelId,
+                          poi => PoI}),
     unsigned_tx_positive_test(Decoded, Encoded,
                                fun get_channel_close_solo/1,
                                fun aesc_close_solo_tx:new/1, MinerPubkey),
@@ -1207,13 +1210,16 @@ state_channels_close_solo(ChannelId, MinerPubkey) ->
     ok.
 
 state_channels_slash(ChannelId, MinerPubkey) ->
+    PoI = aec_trees:new_poi(aec_trees:new_without_backend()),
     Encoded = #{channel_id => aec_base58c:encode(channel, ChannelId),
                 from => aec_base58c:encode(account_pubkey, MinerPubkey),
                 payload => <<"hejsan svejsan">>, %%TODO proper payload
+                poi => aec_base58c:encode(poi, aec_trees:serialize_poi(PoI)),
                 fee => 1},
     Decoded = maps:merge(Encoded,
                         #{from => MinerPubkey,
-                          channel_id => ChannelId}),
+                          channel_id => ChannelId,
+                          poi => PoI}),
     unsigned_tx_positive_test(Decoded, Encoded,
                                fun get_channel_slash/1,
                                fun aesc_slash_tx:new/1, MinerPubkey),

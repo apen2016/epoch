@@ -18,6 +18,7 @@
                         , verify_oracle_query_existence/2
                         , verify_name/1
                         , ttl_decode/1
+                        , poi_decode/1
                         , parse_tx_encoding/1
                         , compute_contract_call_data/0
                         , relative_ttl_decode/1
@@ -386,11 +387,13 @@ handle_request('PostChannelCloseMutual', #{'ChannelCloseMutualTx' := Req}, _Cont
 handle_request('PostChannelCloseSolo', #{'ChannelCloseSoloTx' := Req}, _Context) ->
     ParseFuns = [parse_map_to_atom_keys(),
                  read_required_params([channel_id, from,
-                                       payload, fee]),
+                                       payload, poi, fee]),
                  read_optional_params([{ttl, ttl, '$no_value'}]),
                  base58_decode([{channel_id, channel_id, channel},
-                                {from, from, account_pubkey}]),
+                                {from, from, account_pubkey},
+                                {poi, poi, poi}]),
                  get_nonce(from),
+                 poi_decode(poi),
                  unsigned_tx_response(fun aesc_close_solo_tx:new/1)
                 ],
     process_request(ParseFuns, Req);
@@ -398,11 +401,13 @@ handle_request('PostChannelCloseSolo', #{'ChannelCloseSoloTx' := Req}, _Context)
 handle_request('PostChannelSlash', #{'ChannelSlashTx' := Req}, _Context) ->
     ParseFuns = [parse_map_to_atom_keys(),
                  read_required_params([channel_id, from,
-                                       payload, fee]),
+                                       payload, poi, fee]),
                  read_optional_params([{ttl, ttl, '$no_value'}]),
                  base58_decode([{channel_id, channel_id, channel},
-                                {from, from, account_pubkey}]),
+                                {from, from, account_pubkey},
+                                {poi, poi, poi}]),
                  get_nonce(from),
+                 poi_decode(poi),
                  unsigned_tx_response(fun aesc_slash_tx:new/1)
                 ],
     process_request(ParseFuns, Req);

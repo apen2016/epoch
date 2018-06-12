@@ -3,8 +3,7 @@
 -include("channel_txs.hrl").
 
 -behaviour(aetx).
-
-
+-behaviour(aesc_payload).
 
 %% Behavior API
 -export([new/1,
@@ -197,7 +196,7 @@ for_client(#channel_offchain_tx{
                                     account_pubkey, ResponderPubKey),
       <<"initiator_amount">>   => InitiatorAmount,
       <<"responder_amount">>   => ResponderAmount,
-      <<"updates">>            => [update_for_client(D) || D <- Updates],
+      <<"updates">>            => [aesc_offchain_state:update_for_client(D) || D <- Updates],
       <<"state_hash">>         => aec_base58c:encode(state, StateHash)}.
 
 serialization_template(?CHANNEL_OFFCHAIN_TX_VSN) ->
@@ -241,7 +240,7 @@ total_amount(#channel_offchain_tx{initiator_amount = InitiatorAmount,
                                       responder_amount = ResponderAmount}) ->
     InitiatorAmount + ResponderAmount.
 
--spec updates(tx()) -> [offchain_update()].
+-spec updates(tx()) -> [aesc_offchain_state:update()].
 updates(#channel_offchain_tx{updates = Updates}) ->
     Updates.
 
@@ -289,8 +288,3 @@ set_value(#channel_offchain_tx{} = Tx, state_hash, Hash) when
 
 version() ->
     ?CHANNEL_OFFCHAIN_TX_VSN.
-
-update_for_client({From, To, Amount}) ->
-    #{<<"from">> => From,
-      <<"to">>   => To,
-      <<"am">>   => Amount}.
